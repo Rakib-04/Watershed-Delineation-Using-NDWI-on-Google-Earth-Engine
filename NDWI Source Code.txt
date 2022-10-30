@@ -1,0 +1,45 @@
+/**
+ * Function to mask clouds using the Sentinel-2 QA band
+ * @param {ee.Image} image Sentinel-2 image
+ * @return {ee.Image} cloud masked Sentinel-2 image
+ */
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000);
+}
+
+
+var dataset = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                  .filterDate('2020-01-01', '2020-01-30')
+                  // Pre-filter to get less cloudy granules.
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',20))
+                  .map(maskS2clouds)
+                  .filterBounds(ROI).median().clip(ROI);
+
+var visualization = {
+  min: 0.0,
+  max: 0.3,
+  bands: ['B4', 'B3', 'B2'],
+};
+var visParams_ndwi = {min: -0.2, max: 0.8, palette: ['orange','blue','yellow', 'green', 'cyan']};
+    
+Map.addLayer(dataset, visualization, 'RGB');
+
+var bands =['B2', 'B3', 'B4', 'B5', 'B6', 'B7','B8'];
+var Ndwi = dataset.normalizedDifference(['B3','B8']);
+Map.addLayer(Ndwi,visParams_ndwi,'Sentinel-2 NDWI')
+Export.image.toDrive({
+  image:Ndwi,
+  description:'NDWI of Gazipur',
+  region:ROI,
+  scale:30,
+  crs:'EPSG:32646'
